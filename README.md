@@ -1,10 +1,23 @@
 # Nature-track
 
-Nature-track is a local literature-tracking tool for Earth and environmental science journals. It searches recent publications, filters by journal, date window, keywords, and article type, then shows a compact list in the format:
+![Nature-track feature poster](docs/nature-track-poster.svg)
+
+Nature-track is a local literature radar for researchers who need to keep up with high-impact Earth and environmental science journals without repeatedly checking publisher websites. It turns recent publication metadata into a focused reading feed: select the journals you care about, narrow the feed by date, article type, and keywords, then open the papers that matter.
+
+The project is designed for a simple daily or weekly workflow: scan new publications, identify relevant papers quickly, open available PDFs, and push a digest to your mailbox when you want the tracker to run in the background.
+
+## What It Does
+
+- Tracks selected journals from the Nature family, Science family, and major Earth/environment titles.
+- Searches recent publication metadata through [OpenAlex](https://openalex.org/), an open scholarly metadata source.
+- Filters papers by publication window, article type, abstract availability, and local keyword matches.
+- Presents results in a compact researcher-friendly format:
 
 `first author_corresponding author_journal_title`
 
-The current MVP uses [OpenAlex](https://openalex.org/) as the open metadata source. When an open-access PDF URL is available, the app exposes a direct download/open action; otherwise it links to the DOI page.
+- Expands each record with DOI, abstract, author list, open-access status, DOI link, and PDF link when available.
+- Saves tracker preferences locally for repeat use.
+- Sends manual or scheduled email digests from your own mailbox credentials.
 
 ## Quick Start
 
@@ -15,24 +28,13 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Features
-
-- Track target journals with quick-add buttons and custom journal names.
-- Select a publication date window.
-- Match keywords locally against article abstracts after journal/date/type filtering.
-- Filter by article type, including article, review, editorial, letter, and others supported by OpenAlex.
-- Expand each result to view DOI, abstract, authors, open-access status, DOI link, and PDF link when available.
-- Save tracker settings locally.
-- Send a digest email immediately from the UI or schedule it with Windows Task Scheduler.
-- Configure scheduled digest content separately from the manual on-screen search.
-
 ## Email Digest
 
 1. Open the app and choose your sender email provider.
 2. Fill in sender email, mailbox authorization code/app password, and recipient email.
-2. Click `Save settings`.
-3. Click `Send test digest` to verify delivery.
-4. For scheduled delivery, create a Windows scheduled task that runs:
+3. Click `Save settings`.
+4. Click `Send test digest` to verify delivery.
+5. For scheduled delivery, create a Windows scheduled task that runs:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\send_digest.py
