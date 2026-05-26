@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, time, timedelta
 import subprocess
 from itertools import groupby
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -310,11 +311,12 @@ def _record_read_and_offer_link(article, action: str, url: str, saved_path: str 
     if saved_path:
         payload["saved_path"] = saved_path
     record_read_article(payload, action)
-    st.session_state.last_read_link = {
+    st.session_state.last_action_message = {
         "title": article.title,
         "action": action,
         "url": url,
         "saved_path": saved_path,
+        "message": "Archived.",
     }
 
 
@@ -324,6 +326,12 @@ def _download_and_archive(article) -> None:
         st.session_state.last_download_error = "Set a local download folder in the sidebar first."
         st.session_state.download_error_title = article.title
         return
+    if not article.pdf_url:
+        _record_read_and_offer_link(article, "Download", article.landing_page_url or article.doi_url)
+        st.session_state.last_action_message["message"] = "Archived, but OpenAlex has no direct PDF URL for this article."
+        st.session_state.last_download_error = ""
+        st.session_state.download_error_title = ""
+        return
     try:
         saved_path = download_article_pdf(article, st.session_state.download_dir)
     except Exception as exc:
@@ -332,6 +340,7 @@ def _download_and_archive(article) -> None:
         return
 
     _record_read_and_offer_link(article, "Download", article.pdf_url, str(saved_path))
+    st.session_state.last_action_message["message"] = f"Archived and saved to {saved_path}"
     st.session_state.last_download_error = ""
     st.session_state.download_error_title = ""
 
@@ -364,25 +373,16 @@ def _render_article(article, index: int) -> None:
         if article.doi_url:
             if doi_col.button("DOI", key=f"doi_{index}_{article.doi or article.title}", use_container_width=True):
                 _record_read_and_offer_link(article, "DOI", article.doi_url)
-        target_url = article.pdf_url or article.landing_page_url
-        if target_url:
+        if article.pdf_url or article.landing_page_url:
             if download_col.button(
                 "Download",
                 key=f"download_{index}_{article.doi or article.title}",
                 use_container_width=True,
             ):
-                if article.pdf_url:
-                    _download_and_archive(article)
-                else:
-                    _record_read_and_offer_link(article, "Download", target_url)
+                _download_and_archive(article)
 
-        if st.session_state.get("last_read_link", {}).get("title") == article.title:
-            link = st.session_state.last_read_link
-            if link.get("saved_path"):
-                st.success(f"Archived and saved to {link['saved_path']}")
-            else:
-                st.success(f"Archived. Open {link['action']} below.")
-                st.link_button(f"Open {link['action']}", link["url"])
+        if st.session_state.get("last_action_message", {}).get("title") == article.title:
+            st.success(st.session_state.last_action_message["message"])
         if st.session_state.get("last_download_error") and st.session_state.get("download_error_title") == article.title:
             st.warning(st.session_state.last_download_error)
 
@@ -712,9 +712,18 @@ def main() -> None:
             )
             st.caption("Used when an article has a direct open-access PDF URL.")
             if st.button("Save download folder", use_container_width=True):
-                save_settings(_settings_payload())
-                st.session_state.download_prompt = False
-                st.success("Download folder saved.")
+                folder = st.session_state.download_dir.strip()
+                if not folder:
+                    st.warning("Enter a local folder path first.")
+                elif not Path(folder).exists():
+                    st.warning("This folder does not exist. Create it first or paste an existing folder path.")
+                elif not Path(folder).is_dir():
+                    st.warning("This path is not a folder.")
+                else:
+                    save_settings(_settings_payload())
+                    st.session_state.download_prompt = False
+                    st.session_state.last_download_error = ""
+                    st.success("Download folder saved.")
             if st.session_state.get("last_download_error"):
                 st.warning(st.session_state.last_download_error)
 

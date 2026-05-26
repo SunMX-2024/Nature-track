@@ -16,7 +16,10 @@ def download_article_pdf(article: Article, folder: str) -> Path:
     if not article.pdf_url:
         raise ValueError("No direct PDF URL is available for this article.")
     target_dir = Path(folder).expanduser()
-    target_dir.mkdir(parents=True, exist_ok=True)
+    if not target_dir.exists():
+        raise FileNotFoundError(f"Download folder does not exist: {target_dir}")
+    if not target_dir.is_dir():
+        raise NotADirectoryError(f"Download path is not a folder: {target_dir}")
     target = _unique_path(target_dir / (_article_filename(article) + ".pdf"))
 
     response = requests.get(article.pdf_url, timeout=REQUEST_TIMEOUT)
