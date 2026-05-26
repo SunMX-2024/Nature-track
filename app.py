@@ -9,8 +9,9 @@ import streamlit as st
 from nature_track.config import DEFAULT_SETTINGS, load_settings, save_settings
 from nature_track.emailer import EMAIL_PROVIDERS, EmailSettings, send_digest_email
 from nature_track.filters import filter_article_quality, filter_articles_by_abstract
+from nature_track.filters import parse_keyword_terms
 from nature_track.openalex import ArticleQuery, fetch_articles
-from nature_track.usage import load_usage, record_usage
+from nature_track.usage import frequent_keywords, load_usage, record_keywords, record_usage
 
 
 APP_TITLE = "Nature-track"
@@ -180,7 +181,8 @@ def _build_query() -> ArticleQuery:
         to_date=end,
         keywords="",
         article_types=st.session_state.article_types,
-        max_results=min(st.session_state.max_results * 3, 200),
+        max_results=200,
+        max_pages=max((st.session_state.max_results // 20) + 2, 3),
     )
 
 
@@ -193,7 +195,8 @@ def _build_digest_query() -> ArticleQuery:
         to_date=end,
         keywords="",
         article_types=st.session_state.digest_article_types,
-        max_results=min(st.session_state.digest_max_results * 3, 200),
+        max_results=200,
+        max_pages=max((st.session_state.digest_max_results // 20) + 2, 3),
     )
 
 
@@ -211,6 +214,13 @@ def _filter_results(articles, keywords: str, keyword_match: str, require_abstrac
         keywords,
         keyword_match,
     )
+
+
+def _append_keyword(key: str, target: str = "keywords") -> None:
+    existing = getattr(st.session_state, target, "")
+    terms = parse_keyword_terms(existing)
+    if key.casefold() not in {term.casefold() for term in terms}:
+        st.session_state[target] = (existing.rstrip() + "\n" + key).strip()
 
 
 def _register_schedule() -> subprocess.CompletedProcess[str]:
@@ -470,6 +480,14 @@ def main() -> None:
             height=90,
             help="Matched locally against article abstracts after journal/date/type filtering.",
         )
+        common_keywords = frequent_keywords()
+        if common_keywords:
+            st.caption("Frequent keywords")
+            keyword_cols = st.columns(2)
+            for index, keyword in enumerate(common_keywords):
+                if keyword_cols[index % 2].button(keyword, key=f"kw_{keyword}", use_container_width=True):
+                    _append_keyword(keyword)
+                    st.rerun()
         st.radio(
             "Keyword match",
             ["all", "any"],
@@ -635,6 +653,7 @@ def main() -> None:
                 st.session_state.research_only,
             )[: st.session_state.max_results]
             record_usage(searches=1, articles_seen=len(st.session_state.articles))
+            record_keywords(parse_keyword_terms(st.session_state.keywords))
 
     articles = st.session_state.articles
     if not articles:

@@ -9,9 +9,9 @@ sys.path.insert(0, str(ROOT))
 
 from nature_track.config import DEFAULT_SETTINGS, load_settings
 from nature_track.emailer import EmailSettings, send_digest_email
-from nature_track.filters import filter_article_quality, filter_articles_by_abstract
+from nature_track.filters import filter_article_quality, filter_articles_by_abstract, parse_keyword_terms
 from nature_track.openalex import ArticleQuery, fetch_articles
-from nature_track.usage import record_usage
+from nature_track.usage import record_keywords, record_usage
 
 
 def main() -> None:
@@ -28,7 +28,8 @@ def main() -> None:
         to_date=end,
         keywords=digest["keywords"],
         article_types=digest["article_types"],
-        max_results=min(digest["max_results"] * 3, 200),
+        max_results=200,
+        max_pages=max((digest["max_results"] // 20) + 2, 3),
     )
     articles = filter_articles_by_abstract(
         filter_article_quality(
@@ -54,6 +55,7 @@ def main() -> None:
         articles,
     )
     record_usage(scheduled_pushes=1)
+    record_keywords(parse_keyword_terms(digest["keywords"]))
     print(f"Sent Nature-track digest with {len(articles)} articles.")
 
 

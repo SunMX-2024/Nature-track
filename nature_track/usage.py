@@ -14,6 +14,7 @@ DEFAULT_USAGE: dict[str, Any] = {
     "articles_seen": 0,
     "test_pushes": 0,
     "scheduled_pushes": 0,
+    "keyword_counts": {},
     "last_view_at": "",
     "last_search_at": "",
     "last_push_at": "",
@@ -46,3 +47,23 @@ def record_usage(**increments: int) -> dict[str, Any]:
         usage["last_push_at"] = now
     save_usage(usage)
     return usage
+
+
+def record_keywords(terms: list[str]) -> dict[str, Any]:
+    usage = load_usage()
+    counts = dict(usage.get("keyword_counts", {}))
+    for term in terms:
+        normalized = term.strip()
+        if normalized:
+            counts[normalized] = int(counts.get(normalized, 0)) + 1
+    usage["keyword_counts"] = counts
+    save_usage(usage)
+    return usage
+
+
+def frequent_keywords(limit: int = 12) -> list[str]:
+    counts = load_usage().get("keyword_counts", {})
+    return [
+        term
+        for term, _ in sorted(counts.items(), key=lambda item: (-int(item[1]), item[0].casefold()))[:limit]
+    ]

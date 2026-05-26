@@ -24,6 +24,7 @@ class ArticleQuery:
     keywords: str = ""
     article_types: list[str] | None = None
     max_results: int = 50
+    max_pages: int = 5
 
 
 @dataclass(frozen=True)
@@ -99,8 +100,26 @@ def fetch_articles(query: ArticleQuery) -> list[Article]:
     if query.keywords:
         params["search"] = query.keywords
 
-    data = _request_json("/works", params)
-    return [_parse_article(item) for item in data.get("results", [])]
+    articles: list[Article] = []
+    seen_ids: set[str] = set()
+    max_pages = max(query.max_pages, 1)
+    for page in range(1, max_pages + 1):
+        data = _request_json("/works", params | {"page": page})
+        results = data.get("results", [])
+        if not results:
+            break
+
+        for item in results:
+            item_id = item.get("id") or item.get("doi") or item.get("title")
+            if item_id in seen_ids:
+                continue
+            seen_ids.add(item_id)
+            articles.append(_parse_article(item))
+
+        if len(results) < params["per-page"]:
+            break
+
+    return articles
 
 
 def _parse_article(item: dict[str, Any]) -> Article:
