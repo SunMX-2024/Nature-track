@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import date, time, timedelta
 import subprocess
+from itertools import groupby
 
 import pandas as pd
 import streamlit as st
 
 from nature_track.config import DEFAULT_SETTINGS, load_settings, save_settings
+from nature_track.downloads import download_article_pdf
 from nature_track.emailer import EMAIL_PROVIDERS, EmailSettings, send_digest_email
 from nature_track.filters import filter_article_quality, filter_articles_by_abstract
 from nature_track.filters import parse_keyword_terms
@@ -88,6 +90,7 @@ def _settings_payload() -> dict:
         "article_types": st.session_state.article_types,
         "require_abstract": st.session_state.require_abstract,
         "research_only": st.session_state.research_only,
+        "download_dir": st.session_state.download_dir.strip(),
         "days_back": st.session_state.days_back,
         "max_results": st.session_state.max_results,
         "schedule": {
@@ -152,6 +155,7 @@ def _apply_initial_state(settings: dict) -> None:
     st.session_state.setdefault("article_types", defaults["article_types"])
     st.session_state.setdefault("require_abstract", bool(defaults.get("require_abstract", True)))
     st.session_state.setdefault("research_only", bool(defaults.get("research_only", True)))
+    st.session_state.setdefault("download_dir", defaults.get("download_dir", ""))
     st.session_state.setdefault("days_back", int(defaults["days_back"]))
     st.session_state.setdefault("max_results", int(defaults["max_results"]))
     st.session_state.setdefault("schedule_enabled", bool(schedule["enabled"]))
@@ -301,16 +305,38 @@ def _article_archive_payload(article) -> dict:
     }
 
 
-def _record_read_and_offer_link(article, action: str, url: str) -> None:
-    record_read_article(_article_archive_payload(article), action)
+def _record_read_and_offer_link(article, action: str, url: str, saved_path: str = "") -> None:
+    payload = _article_archive_payload(article)
+    if saved_path:
+        payload["saved_path"] = saved_path
+    record_read_article(payload, action)
     st.session_state.last_read_link = {
         "title": article.title,
         "action": action,
         "url": url,
+        "saved_path": saved_path,
     }
 
 
-def _render_article(article) -> None:
+def _download_and_archive(article) -> None:
+    if not st.session_state.download_dir.strip():
+        st.session_state.download_prompt = True
+        st.session_state.last_download_error = "Set a local download folder in the sidebar first."
+        st.session_state.download_error_title = article.title
+        return
+    try:
+        saved_path = download_article_pdf(article, st.session_state.download_dir)
+    except Exception as exc:
+        st.session_state.last_download_error = str(exc)
+        st.session_state.download_error_title = article.title
+        return
+
+    _record_read_and_offer_link(article, "Download", article.pdf_url, str(saved_path))
+    st.session_state.last_download_error = ""
+    st.session_state.download_error_title = ""
+
+
+def _render_article(article, index: int) -> None:
     title = article.title or "Untitled article"
     expander_label = f"{title}    |    {article.journal}" if article.journal else title
     with st.expander(expander_label):
@@ -333,45 +359,37 @@ def _render_article(article) -> None:
             st.markdown(
                 f"<div class='article-authors'>{authors}</div>",
                 unsafe_allow_html=True,
-            )
+        )
         spacer, doi_col, download_col = st.columns([4.2, 0.9, 1.1])
         if article.doi_url:
-            if doi_col.button("DOI", key=f"doi_{article.doi or article.title}", use_container_width=True):
+            if doi_col.button("DOI", key=f"doi_{index}_{article.doi or article.title}", use_container_width=True):
                 _record_read_and_offer_link(article, "DOI", article.doi_url)
         target_url = article.pdf_url or article.landing_page_url
         if target_url:
             if download_col.button(
                 "Download",
-                key=f"download_{article.doi or article.title}",
+                key=f"download_{index}_{article.doi or article.title}",
                 use_container_width=True,
             ):
-                _record_read_and_offer_link(article, "Download", target_url)
+                if article.pdf_url:
+                    _download_and_archive(article)
+                else:
+                    _record_read_and_offer_link(article, "Download", target_url)
 
         if st.session_state.get("last_read_link", {}).get("title") == article.title:
             link = st.session_state.last_read_link
-            st.success(f"Archived. Open {link['action']} below.")
-            st.link_button(f"Open {link['action']}", link["url"])
+            if link.get("saved_path"):
+                st.success(f"Archived and saved to {link['saved_path']}")
+            else:
+                st.success(f"Archived. Open {link['action']} below.")
+                st.link_button(f"Open {link['action']}", link["url"])
+        if st.session_state.get("last_download_error") and st.session_state.get("download_error_title") == article.title:
+            st.warning(st.session_state.last_download_error)
 
 
 def _render_usage_fab() -> None:
     usage = load_usage()
     email_pushes = int(usage["test_pushes"]) + int(usage["scheduled_pushes"])
-    read_articles = usage.get("read_articles", [])[:8]
-    if read_articles:
-        items = []
-        for item in read_articles:
-            url = item.get("doi_url") or item.get("landing_page_url") or item.get("pdf_url") or "#"
-            title = item.get("title") or "Untitled"
-            journal = item.get("journal") or "Unknown journal"
-            read_at = item.get("last_read_at") or ""
-            items.append(
-                f'<li><a href="{url}" target="_blank" rel="noreferrer">{title}</a>'
-                f'<span>{journal} ? {read_at}</span></li>'
-            )
-        archive_html = '<ul class="read-archive">' + ''.join(items) + '</ul>'
-    else:
-        archive_html = "<p>No archived reads yet.</p>"
-
     st.markdown(
         f"""
         <div class="usage-fab">
@@ -383,12 +401,54 @@ def _render_usage_fab() -> None:
                     <div><span>Searches</span><strong>{usage["searches"]}</strong></div>
                     <div><span>Articles seen</span><strong>{usage["articles_seen"]}</strong></div>
                     <div><span>Email pushes</span><strong>{email_pushes}</strong></div>
-                    <div><span>Archived reads</span><strong>{len(usage.get("read_articles", []))}</strong></div>
-                    <div class="usage-title archive-title">Read archive</div>
-                    {archive_html}
                     <p>Last view: {usage["last_view_at"] or "none"}</p>
                     <p>Last search: {usage["last_search_at"] or "none"}</p>
                     <p>Last push: {usage["last_push_at"] or "none"}</p>
+                </div>
+            </details>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def _render_archive_fab() -> None:
+    read_articles = load_usage().get("read_articles", [])
+    groups: list[tuple[str, list[dict]]] = []
+    sorted_articles = sorted(read_articles, key=lambda item: item.get("last_read_at", ""), reverse=True)
+    for month, items in groupby(sorted_articles, key=lambda item: (item.get("last_read_at", "")[:7] or "Unknown")):
+        groups.append((month, list(items)))
+
+    if groups:
+        sections = []
+        for month, items in groups:
+            entries = []
+            for item in items:
+                url = item.get("saved_path") or item.get("doi_url") or item.get("landing_page_url") or item.get("pdf_url") or "#"
+                title = item.get("title") or "Untitled"
+                journal = item.get("journal") or "Unknown journal"
+                read_at = item.get("last_read_at") or ""
+                saved = item.get("saved_path")
+                saved_text = f"<span>Saved: {saved}</span>" if saved else ""
+                entries.append(
+                    f'<li><a href="{url}" target="_blank" rel="noreferrer">{title}</a>'
+                    f'<span>{journal} · {read_at}</span>{saved_text}</li>'
+                )
+            sections.append(
+                f'<details class="archive-month" open><summary>{month} ({len(items)})</summary>'
+                f'<ul class="read-archive">{"".join(entries)}</ul></details>'
+            )
+        body = "".join(sections)
+    else:
+        body = "<p>No archived reads yet.</p>"
+
+    st.markdown(
+        f"""
+        <div class="archive-fab">
+            <details>
+                <summary title="Read archive">R</summary>
+                <div class="archive-panel">
+                    <div class="usage-title">Read archive</div>
+                    {body}
                 </div>
             </details>
         </div>
@@ -468,11 +528,47 @@ def main() -> None:
             color: #2d4054;
         }
         .usage-fab summary::-webkit-details-marker {display: none;}
+        .archive-fab {
+            position: fixed;
+            right: 4.2rem;
+            bottom: 1.1rem;
+            z-index: 9999;
+            font-family: inherit;
+        }
+        .archive-fab summary {
+            list-style: none;
+            width: 2.6rem;
+            height: 2.6rem;
+            border-radius: 50%;
+            border: 1px solid #d8e0e7;
+            background: #ffffff;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.15rem;
+            color: #2d4054;
+        }
+        .archive-fab summary::-webkit-details-marker {display: none;}
         .usage-panel {
             position: absolute;
             right: 0;
             bottom: 3.1rem;
             width: 15rem;
+            border: 1px solid #d8e0e7;
+            border-radius: 8px;
+            background: #ffffff;
+            box-shadow: 0 14px 32px rgba(15, 23, 42, 0.16);
+            padding: 0.85rem;
+            color: #1f2f3d;
+        }
+        .archive-panel {
+            position: absolute;
+            right: 0;
+            bottom: 3.1rem;
+            width: 24rem;
+            max-width: calc(100vw - 2rem);
             border: 1px solid #d8e0e7;
             border-radius: 8px;
             background: #ffffff;
@@ -505,8 +601,18 @@ def main() -> None:
             list-style: none;
             padding: 0;
             margin: 0.2rem 0 0.55rem;
-            max-height: 16rem;
+            max-height: 20rem;
             overflow-y: auto;
+        }
+        .archive-month {
+            border-top: 1px solid #edf0f2;
+            padding-top: 0.35rem;
+            margin-top: 0.35rem;
+        }
+        .archive-month summary {
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.9rem;
         }
         .read-archive li {
             border-bottom: 1px solid #f0f3f5;
@@ -534,6 +640,7 @@ def main() -> None:
     )
 
     _render_usage_fab()
+    _render_archive_fab()
     st.title(APP_TITLE)
     st.caption("Track recent Earth and environmental science papers from target journals.")
 
@@ -595,6 +702,21 @@ def main() -> None:
             help="Filters out records without substantial abstracts and common correction/news-like titles.",
         )
         st.number_input("Max results", min_value=5, max_value=200, step=5, key="max_results")
+
+        st.divider()
+        with st.expander("Local downloads", expanded=bool(st.session_state.get("download_prompt"))):
+            st.text_input(
+                "Download folder",
+                key="download_dir",
+                placeholder="e.g. F:\\Nature_track\\downloads",
+            )
+            st.caption("Used when an article has a direct open-access PDF URL.")
+            if st.button("Save download folder", use_container_width=True):
+                save_settings(_settings_payload())
+                st.session_state.download_prompt = False
+                st.success("Download folder saved.")
+            if st.session_state.get("last_download_error"):
+                st.warning(st.session_state.last_download_error)
 
         st.divider()
         with st.expander("Email digest", expanded=False):
@@ -765,8 +887,8 @@ def main() -> None:
         st.markdown("</div>", unsafe_allow_html=True)
     st.divider()
 
-    for article in articles:
-        _render_article(article)
+    for index, article in enumerate(articles):
+        _render_article(article, index)
 
 
 if __name__ == "__main__":

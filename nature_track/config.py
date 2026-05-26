@@ -24,6 +24,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "article_types": ["article", "review"],
     "require_abstract": True,
     "research_only": True,
+    "download_dir": "",
     "days_back": 30,
     "max_results": 50,
     "digest": {
