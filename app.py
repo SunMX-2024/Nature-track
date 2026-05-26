@@ -11,7 +11,13 @@ from nature_track.emailer import EMAIL_PROVIDERS, EmailSettings, send_digest_ema
 from nature_track.filters import filter_article_quality, filter_articles_by_abstract
 from nature_track.filters import parse_keyword_terms
 from nature_track.openalex import ArticleQuery, fetch_articles
-from nature_track.usage import frequent_keywords, load_usage, record_keywords, record_usage
+from nature_track.usage import (
+    frequent_keywords,
+    load_usage,
+    record_keywords,
+    record_read_article,
+    record_usage,
+)
 
 
 APP_TITLE = "Nature-track"
@@ -280,6 +286,30 @@ def _format_authors(article) -> str:
     return ", ".join(authors)
 
 
+def _article_archive_payload(article) -> dict:
+    return {
+        "title": article.title,
+        "journal": article.journal,
+        "publication_date": article.publication_date,
+        "article_type": article.article_type,
+        "doi": article.doi,
+        "doi_url": article.doi_url,
+        "pdf_url": article.pdf_url,
+        "landing_page_url": article.landing_page_url,
+        "authors": article.authors,
+        "corresponding_authors": article.corresponding_authors,
+    }
+
+
+def _record_read_and_offer_link(article, action: str, url: str) -> None:
+    record_read_article(_article_archive_payload(article), action)
+    st.session_state.last_read_link = {
+        "title": article.title,
+        "action": action,
+        "url": url,
+    }
+
+
 def _render_article(article) -> None:
     title = article.title or "Untitled article"
     expander_label = f"{title}    |    {article.journal}" if article.journal else title
@@ -306,26 +336,56 @@ def _render_article(article) -> None:
             )
         spacer, doi_col, download_col = st.columns([4.2, 0.9, 1.1])
         if article.doi_url:
-            doi_col.link_button("DOI", article.doi_url, use_container_width=True)
+            if doi_col.button("DOI", key=f"doi_{article.doi or article.title}", use_container_width=True):
+                _record_read_and_offer_link(article, "DOI", article.doi_url)
         target_url = article.pdf_url or article.landing_page_url
         if target_url:
-            download_col.link_button("Download", target_url, use_container_width=True)
+            if download_col.button(
+                "Download",
+                key=f"download_{article.doi or article.title}",
+                use_container_width=True,
+            ):
+                _record_read_and_offer_link(article, "Download", target_url)
+
+        if st.session_state.get("last_read_link", {}).get("title") == article.title:
+            link = st.session_state.last_read_link
+            st.success(f"Archived. Open {link['action']} below.")
+            st.link_button(f"Open {link['action']}", link["url"])
 
 
 def _render_usage_fab() -> None:
     usage = load_usage()
     email_pushes = int(usage["test_pushes"]) + int(usage["scheduled_pushes"])
+    read_articles = usage.get("read_articles", [])[:8]
+    if read_articles:
+        items = []
+        for item in read_articles:
+            url = item.get("doi_url") or item.get("landing_page_url") or item.get("pdf_url") or "#"
+            title = item.get("title") or "Untitled"
+            journal = item.get("journal") or "Unknown journal"
+            read_at = item.get("last_read_at") or ""
+            items.append(
+                f'<li><a href="{url}" target="_blank" rel="noreferrer">{title}</a>'
+                f'<span>{journal} ? {read_at}</span></li>'
+            )
+        archive_html = '<ul class="read-archive">' + ''.join(items) + '</ul>'
+    else:
+        archive_html = "<p>No archived reads yet.</p>"
+
     st.markdown(
         f"""
         <div class="usage-fab">
             <details>
-                <summary title="Usage statistics">☆</summary>
+                <summary title="Usage statistics">&#9734;</summary>
                 <div class="usage-panel">
                     <div class="usage-title">Usage</div>
                     <div><span>Views</span><strong>{usage["views"]}</strong></div>
                     <div><span>Searches</span><strong>{usage["searches"]}</strong></div>
                     <div><span>Articles seen</span><strong>{usage["articles_seen"]}</strong></div>
                     <div><span>Email pushes</span><strong>{email_pushes}</strong></div>
+                    <div><span>Archived reads</span><strong>{len(usage.get("read_articles", []))}</strong></div>
+                    <div class="usage-title archive-title">Read archive</div>
+                    {archive_html}
                     <p>Last view: {usage["last_view_at"] or "none"}</p>
                     <p>Last search: {usage["last_search_at"] or "none"}</p>
                     <p>Last push: {usage["last_push_at"] or "none"}</p>
@@ -335,7 +395,6 @@ def _render_usage_fab() -> None:
         """,
         unsafe_allow_html=True,
     )
-
 
 def main() -> None:
     st.set_page_config(page_title=APP_TITLE, page_icon="N", layout="wide")
@@ -436,6 +495,38 @@ def main() -> None:
             margin: 0.35rem 0 0;
             color: #74808c;
             font-size: 0.78rem;
+        }
+        .archive-title {
+            border-top: 1px solid #edf0f2;
+            padding-top: 0.55rem;
+            margin-top: 0.55rem;
+        }
+        .read-archive {
+            list-style: none;
+            padding: 0;
+            margin: 0.2rem 0 0.55rem;
+            max-height: 16rem;
+            overflow-y: auto;
+        }
+        .read-archive li {
+            border-bottom: 1px solid #f0f3f5;
+            padding: 0.38rem 0;
+        }
+        .read-archive a {
+            display: block;
+            color: #1f3d5a;
+            font-size: 0.82rem;
+            line-height: 1.25;
+            text-decoration: none;
+        }
+        .read-archive a:hover {
+            text-decoration: underline;
+        }
+        .read-archive span {
+            display: block;
+            color: #7a8490;
+            font-size: 0.72rem;
+            margin-top: 0.15rem;
         }
         </style>
         """,

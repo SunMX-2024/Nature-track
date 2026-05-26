@@ -15,6 +15,7 @@ DEFAULT_USAGE: dict[str, Any] = {
     "test_pushes": 0,
     "scheduled_pushes": 0,
     "keyword_counts": {},
+    "read_articles": [],
     "last_view_at": "",
     "last_search_at": "",
     "last_push_at": "",
@@ -67,3 +68,34 @@ def frequent_keywords(limit: int = 12) -> list[str]:
         term
         for term, _ in sorted(counts.items(), key=lambda item: (-int(item[1]), item[0].casefold()))[:limit]
     ]
+
+
+def record_read_article(article: dict[str, Any], action: str) -> dict[str, Any]:
+    usage = load_usage()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    archive = list(usage.get("read_articles", []))
+    key = article.get("doi") or article.get("title")
+
+    existing = next(
+        (item for item in archive if (item.get("doi") or item.get("title")) == key),
+        None,
+    )
+    if existing:
+        existing["last_read_at"] = now
+        existing["read_count"] = int(existing.get("read_count", 1)) + 1
+        existing["last_action"] = action
+    else:
+        archive.insert(
+            0,
+            {
+                **article,
+                "first_read_at": now,
+                "last_read_at": now,
+                "read_count": 1,
+                "last_action": action,
+            },
+        )
+
+    usage["read_articles"] = archive[:100]
+    save_usage(usage)
+    return usage
