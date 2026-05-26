@@ -30,7 +30,7 @@ def download_article_pdf(article: Article, folder: str) -> Path:
 
 
 def _article_filename(article: Article) -> str:
-    author = _safe_part((article.first_author or "Unknown").split()[0])
+    author = _safe_part((article.first_author or "Unknown").split()[-1])
     year = (article.publication_date[:4] or "0000")[-2:]
     journal = _safe_part(article.journal or "Unknown")
     title = _safe_part(article.title or "Untitled")
