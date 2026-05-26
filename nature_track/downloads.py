@@ -80,9 +80,11 @@ def _safe_title(value: str) -> str:
 
 def _journal_abbreviation(value: str) -> str:
     normalized = re.sub(r"\s+", " ", value).strip().casefold()
+    words = re.findall(r"[A-Za-z0-9]+", value)
+    if len(words) == 1:
+        return words[0]
     if normalized in JOURNAL_ABBREVIATIONS:
         return JOURNAL_ABBREVIATIONS[normalized]
-    words = re.findall(r"[A-Za-z0-9]+", value)
     return "".join(word[0].upper() for word in words[:5]) or "Unknown"
 
 
