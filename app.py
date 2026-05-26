@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import date, time, timedelta
-import subprocess
+from html import escape
 from itertools import groupby
+import json
+import subprocess
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from nature_track.config import DEFAULT_SETTINGS, load_settings, save_settings
 from nature_track.downloads import download_article_pdf
@@ -306,7 +309,7 @@ def _article_archive_payload(article) -> dict:
     }
 
 
-def _record_read_and_offer_link(article, action: str, url: str, saved_path: str = "") -> None:
+def _record_read_and_offer_link(article, action: str, url: str, saved_path: str = "", message: str = "Archived.") -> None:
     payload = _article_archive_payload(article)
     if saved_path:
         payload["saved_path"] = saved_path
@@ -316,8 +319,33 @@ def _record_read_and_offer_link(article, action: str, url: str, saved_path: str 
         "action": action,
         "url": url,
         "saved_path": saved_path,
-        "message": "Archived.",
+        "message": message,
     }
+    if url and not saved_path:
+        st.session_state.pending_open_url = url
+
+
+def _open_pending_url_for(article) -> None:
+    message = st.session_state.get("last_action_message", {})
+    pending_url = st.session_state.get("pending_open_url", "")
+    if not pending_url or message.get("title") != article.title:
+        return
+
+    components.html(
+        f"""
+        <script>
+        const target = {json.dumps(pending_url)};
+        setTimeout(() => {{
+            const opened = window.open(target, "_blank", "noopener,noreferrer");
+            if (!opened && window.parent) {{
+                window.parent.open(target, "_blank", "noopener,noreferrer");
+            }}
+        }}, 50);
+        </script>
+        """,
+        height=0,
+    )
+    st.session_state.pending_open_url = ""
 
 
 def _download_and_archive(article) -> None:
@@ -326,15 +354,15 @@ def _download_and_archive(article) -> None:
         st.session_state.last_download_error = "Set a local download folder in the sidebar first."
         st.session_state.download_error_title = article.title
         return
-    if not article.pdf_url:
-        _record_read_and_offer_link(article, "Download", article.landing_page_url or article.doi_url)
-        st.session_state.last_action_message["message"] = "Archived, but OpenAlex has no direct PDF URL for this article."
-        st.session_state.last_download_error = ""
-        st.session_state.download_error_title = ""
-        return
     try:
         saved_path = download_article_pdf(article, st.session_state.download_dir)
     except Exception as exc:
+        _record_read_and_offer_link(
+            article,
+            "Download",
+            article.landing_page_url or article.doi_url,
+            message="Archived, but no downloadable PDF URL was found for this article.",
+        )
         st.session_state.last_download_error = str(exc)
         st.session_state.download_error_title = article.title
         return
@@ -372,8 +400,13 @@ def _render_article(article, index: int) -> None:
         spacer, doi_col, download_col = st.columns([4.2, 0.9, 1.1])
         if article.doi_url:
             if doi_col.button("DOI", key=f"doi_{index}_{article.doi or article.title}", use_container_width=True):
-                _record_read_and_offer_link(article, "DOI", article.doi_url)
-        if article.pdf_url or article.landing_page_url:
+                _record_read_and_offer_link(
+                    article,
+                    "DOI",
+                    article.landing_page_url or article.doi_url,
+                    message="Archived and opening paper page.",
+                )
+        if article.pdf_url or article.landing_page_url or article.doi_url:
             if download_col.button(
                 "Download",
                 key=f"download_{index}_{article.doi or article.title}",
@@ -382,7 +415,14 @@ def _render_article(article, index: int) -> None:
                 _download_and_archive(article)
 
         if st.session_state.get("last_action_message", {}).get("title") == article.title:
-            st.success(st.session_state.last_action_message["message"])
+            message = st.session_state.last_action_message
+            st.success(message["message"])
+            if message.get("url") and not message.get("saved_path"):
+                _open_pending_url_for(article)
+                st.markdown(
+                    f"<small>If the browser blocks it: <a href='{escape(message['url'])}' target='_blank' rel='noreferrer'>open page</a></small>",
+                    unsafe_allow_html=True,
+                )
         if st.session_state.get("last_download_error") and st.session_state.get("download_error_title") == article.title:
             st.warning(st.session_state.last_download_error)
 
@@ -393,19 +433,17 @@ def _render_usage_fab() -> None:
     st.markdown(
         f"""
         <div class="usage-fab">
-            <details>
-                <summary title="Usage statistics">&#9734;</summary>
-                <div class="usage-panel">
-                    <div class="usage-title">Usage</div>
-                    <div><span>Views</span><strong>{usage["views"]}</strong></div>
-                    <div><span>Searches</span><strong>{usage["searches"]}</strong></div>
-                    <div><span>Articles seen</span><strong>{usage["articles_seen"]}</strong></div>
-                    <div><span>Email pushes</span><strong>{email_pushes}</strong></div>
-                    <p>Last view: {usage["last_view_at"] or "none"}</p>
-                    <p>Last search: {usage["last_search_at"] or "none"}</p>
-                    <p>Last push: {usage["last_push_at"] or "none"}</p>
-                </div>
-            </details>
+            <button class="fab-button" popovertarget="usage-popover" title="Usage statistics">&#9734;</button>
+        </div>
+        <div id="usage-popover" class="usage-panel" popover>
+            <div class="usage-title">Usage</div>
+            <div><span>Views</span><strong>{usage["views"]}</strong></div>
+            <div><span>Searches</span><strong>{usage["searches"]}</strong></div>
+            <div><span>Articles seen</span><strong>{usage["articles_seen"]}</strong></div>
+            <div><span>Email pushes</span><strong>{email_pushes}</strong></div>
+            <p>Last view: {usage["last_view_at"] or "none"}</p>
+            <p>Last search: {usage["last_search_at"] or "none"}</p>
+            <p>Last push: {usage["last_push_at"] or "none"}</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -423,18 +461,18 @@ def _render_archive_fab() -> None:
         for month, items in groups:
             entries = []
             for item in items:
-                url = item.get("saved_path") or item.get("doi_url") or item.get("landing_page_url") or item.get("pdf_url") or "#"
-                title = item.get("title") or "Untitled"
-                journal = item.get("journal") or "Unknown journal"
-                read_at = item.get("last_read_at") or ""
-                saved = item.get("saved_path")
+                url = escape(item.get("saved_path") or item.get("landing_page_url") or item.get("doi_url") or item.get("pdf_url") or "#")
+                title = escape(item.get("title") or "Untitled")
+                journal = escape(item.get("journal") or "Unknown journal")
+                read_at = escape(item.get("last_read_at") or "")
+                saved = escape(item.get("saved_path") or "")
                 saved_text = f"<span>Saved: {saved}</span>" if saved else ""
                 entries.append(
                     f'<li><a href="{url}" target="_blank" rel="noreferrer">{title}</a>'
-                    f'<span>{journal} · {read_at}</span>{saved_text}</li>'
+                    f'<span>{journal} &middot; {read_at}</span>{saved_text}</li>'
                 )
             sections.append(
-                f'<details class="archive-month" open><summary>{month} ({len(items)})</summary>'
+                f'<details class="archive-month" open><summary>{escape(month)} ({len(items)})</summary>'
                 f'<ul class="read-archive">{"".join(entries)}</ul></details>'
             )
         body = "".join(sections)
@@ -444,13 +482,13 @@ def _render_archive_fab() -> None:
     st.markdown(
         f"""
         <div class="archive-fab">
-            <details>
-                <summary title="Read archive">R</summary>
-                <div class="archive-panel">
-                    <div class="usage-title">Read archive</div>
-                    {body}
-                </div>
-            </details>
+            <button class="fab-button" popovertarget="archive-popover" title="Read archive">
+                <span class="archive-icon" aria-hidden="true"></span>
+            </button>
+        </div>
+        <div id="archive-popover" class="archive-panel" popover>
+            <div class="usage-title">Read archive</div>
+            {body}
         </div>
         """,
         unsafe_allow_html=True,
@@ -512,8 +550,7 @@ def main() -> None:
             z-index: 9999;
             font-family: inherit;
         }
-        .usage-fab summary {
-            list-style: none;
+        .fab-button {
             width: 2.6rem;
             height: 2.6rem;
             border-radius: 50%;
@@ -526,8 +563,13 @@ def main() -> None:
             cursor: pointer;
             font-size: 1.35rem;
             color: #2d4054;
+            line-height: 1;
+            padding: 0;
         }
-        .usage-fab summary::-webkit-details-marker {display: none;}
+        .fab-button:hover {
+            border-color: #b7c6d4;
+            color: #18324b;
+        }
         .archive-fab {
             position: fixed;
             right: 4.2rem;
@@ -535,26 +577,31 @@ def main() -> None:
             z-index: 9999;
             font-family: inherit;
         }
-        .archive-fab summary {
-            list-style: none;
-            width: 2.6rem;
-            height: 2.6rem;
-            border-radius: 50%;
-            border: 1px solid #d8e0e7;
-            background: #ffffff;
-            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 1.15rem;
-            color: #2d4054;
+        .archive-icon {
+            position: relative;
+            width: 1.15rem;
+            height: 0.85rem;
+            border: 1.8px solid currentColor;
+            border-radius: 3px;
+            display: block;
         }
-        .archive-fab summary::-webkit-details-marker {display: none;}
-        .usage-panel {
+        .archive-icon::before {
+            content: "";
             position: absolute;
-            right: 0;
-            bottom: 3.1rem;
+            left: 0.12rem;
+            top: -0.36rem;
+            width: 0.52rem;
+            height: 0.32rem;
+            border: 1.8px solid currentColor;
+            border-bottom: 0;
+            border-radius: 3px 3px 0 0;
+            background: #ffffff;
+        }
+        .usage-panel {
+            position: fixed;
+            inset: auto 1.1rem 4.2rem auto;
+            right: 1.1rem;
+            bottom: 4.2rem;
             width: 15rem;
             border: 1px solid #d8e0e7;
             border-radius: 8px;
@@ -564,9 +611,10 @@ def main() -> None:
             color: #1f2f3d;
         }
         .archive-panel {
-            position: absolute;
-            right: 0;
-            bottom: 3.1rem;
+            position: fixed;
+            inset: auto 1.1rem 4.2rem auto;
+            right: 1.1rem;
+            bottom: 4.2rem;
             width: 24rem;
             max-width: calc(100vw - 2rem);
             border: 1px solid #d8e0e7;
