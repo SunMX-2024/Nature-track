@@ -17,6 +17,99 @@ NON_RESEARCH_TITLE_PATTERNS = [
     r"^where i work",
 ]
 
+EARTH_FOCUS_JOURNALS = {
+    "nature geoscience",
+    "nature climate change",
+    "nature water",
+    "nature sustainability",
+    "one earth",
+    "global change biology",
+    "earth system science data",
+    "environmental research letters",
+    "geophysical research letters",
+    "journal of geophysical research: biogeosciences",
+    "remote sensing of environment",
+}
+
+EARTH_SIGNAL_TERMS = [
+    "earth system",
+    "climate",
+    "carbon cycle",
+    "carbon budget",
+    "carbon sink",
+    "carbon storage",
+    "biogeochemical",
+    "ecosystem",
+    "ecology",
+    "biodiversity",
+    "forest",
+    "vegetation",
+    "grassland",
+    "savanna",
+    "peatland",
+    "wetland",
+    "permafrost",
+    "soil",
+    "land use",
+    "land cover",
+    "deforestation",
+    "afforestation",
+    "drought",
+    "aridity",
+    "precipitation",
+    "hydrology",
+    "water cycle",
+    "water resources",
+    "river",
+    "groundwater",
+    "flood",
+    "glacier",
+    "ice sheet",
+    "sea level",
+    "ocean",
+    "atmosphere",
+    "monsoon",
+    "remote sensing",
+    "terrestrial",
+    "fire",
+]
+
+OFF_DOMAIN_TERMS = [
+    "cell biology",
+    "molecular biology",
+    "biochemistry",
+    "protein",
+    "gene",
+    "genetic",
+    "genome",
+    "chromosome",
+    "lysosome",
+    "autophagy",
+    "microautophagy",
+    "sting",
+    "interferon",
+    "immune",
+    "immunology",
+    "inflammasome",
+    "cancer",
+    "tumor",
+    "clinical",
+    "vaccine",
+    "covid",
+    "virus",
+    "bacteria",
+    "organic chemistry",
+    "nuclear chemistry",
+    "photochemical",
+    "fluorine",
+    "perfluoro",
+    "defluorination",
+    "hydroxyl-radical",
+    "industrial wastewater",
+    "wastewater",
+    "sewage treatment",
+]
+
 
 @dataclass(frozen=True)
 class KeywordQuery:
@@ -134,7 +227,45 @@ def _looks_research_like(article: Article) -> bool:
     if any(re.search(pattern, title) for pattern in NON_RESEARCH_TITLE_PATTERNS):
         return False
 
-    return len(article.abstract.split()) >= 60
+    return len(article.abstract.split()) >= 60 and _passes_earth_guardrail(article)
+
+
+def _passes_earth_guardrail(article: Article) -> bool:
+    if article.journal.casefold().strip() in EARTH_FOCUS_JOURNALS:
+        return True
+
+    metadata = " ".join([article.primary_topic, *article.topics, *article.concepts, *article.keywords]).strip()
+    metadata_text = metadata.casefold()
+    title_text = (article.title or "").casefold()
+    title_metadata_text = "\n".join(value for value in [title_text, metadata_text] if value)
+    full_text = _domain_text(article)
+
+    has_strong_earth_signal = any(_term_matches(term, title_metadata_text) for term in EARTH_SIGNAL_TERMS)
+    has_weak_earth_signal = any(_term_matches(term, full_text) for term in EARTH_SIGNAL_TERMS)
+    has_off_domain_signal = any(_term_matches(term, full_text) for term in OFF_DOMAIN_TERMS)
+
+    if metadata and not has_strong_earth_signal:
+        return False
+
+    if has_off_domain_signal and not has_strong_earth_signal:
+        return False
+
+    if not has_weak_earth_signal:
+        return False
+
+    return True
+
+
+def _domain_text(article: Article) -> str:
+    values = [
+        article.title,
+        article.abstract,
+        article.primary_topic,
+        *article.topics,
+        *article.concepts,
+        *article.keywords,
+    ]
+    return "\n".join(value for value in values if value).casefold()
 
 
 def _normalize_keyword_term(value: str) -> str:

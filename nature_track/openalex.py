@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from functools import lru_cache
 from html import unescape
@@ -44,6 +44,10 @@ class Article:
     is_oa: bool
     pdf_url: str
     landing_page_url: str
+    primary_topic: str = ""
+    topics: list[str] = field(default_factory=list)
+    concepts: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
 
     @property
     def compact_label(self) -> str:
@@ -149,6 +153,10 @@ def _parse_article(item: dict[str, Any]) -> Article:
         is_oa=bool((item.get("open_access") or {}).get("is_oa")),
         pdf_url=oa_location.get("pdf_url") or primary_location.get("pdf_url") or "",
         landing_page_url=oa_location.get("landing_page_url") or primary_location.get("landing_page_url") or "",
+        primary_topic=_topic_name(item.get("primary_topic") or {}),
+        topics=_topic_names(item),
+        concepts=_concept_names(item),
+        keywords=_keyword_names(item),
     )
 
 
@@ -182,6 +190,42 @@ def _decode_abstract(index: dict[str, list[int]] | None) -> str:
         words.extend((position, word) for position in positions)
 
     return _clean_text(" ".join(word for _, word in sorted(words, key=lambda pair: pair[0])))
+
+
+def _topic_name(topic: dict[str, Any]) -> str:
+    return _clean_text(topic.get("display_name") or "")
+
+
+def _topic_names(item: dict[str, Any]) -> list[str]:
+    names = [_topic_name(topic) for topic in item.get("topics", [])]
+    primary = _topic_name(item.get("primary_topic") or {})
+    return _dedupe([primary, *names])
+
+
+def _concept_names(item: dict[str, Any]) -> list[str]:
+    return _dedupe(
+        _clean_text(concept.get("display_name") or "")
+        for concept in item.get("concepts", [])
+    )
+
+
+def _keyword_names(item: dict[str, Any]) -> list[str]:
+    return _dedupe(
+        _clean_text(keyword.get("display_name") or keyword.get("keyword") or "")
+        for keyword in item.get("keywords", [])
+    )
+
+
+def _dedupe(values) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        normalized = value.strip()
+        key = normalized.casefold()
+        if normalized and key not in seen:
+            seen.add(key)
+            result.append(normalized)
+    return result
 
 
 def _clean_text(value: str) -> str:
