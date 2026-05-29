@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, time, timedelta
 from html import escape
 from itertools import groupby
@@ -15,6 +16,7 @@ from nature_track.config import DEFAULT_SETTINGS, load_settings, save_settings
 from nature_track.downloads import download_article_pdf
 from nature_track.emailer import EMAIL_PROVIDERS, EmailSettings, send_digest_email
 from nature_track.filters import filter_article_quality, filter_articles_by_abstract
+from nature_track.filters import keyword_hit_count
 from nature_track.filters import parse_keyword_terms
 from nature_track.openalex import ArticleQuery, fetch_articles
 from nature_track.usage import (
@@ -91,6 +93,7 @@ def _settings_payload() -> dict:
         "journals": st.session_state.selected_journals,
         "keywords": st.session_state.keywords.strip(),
         "keyword_match": st.session_state.keyword_match,
+        "keyword_scope": st.session_state.keyword_scope,
         "article_types": st.session_state.article_types,
         "require_abstract": st.session_state.require_abstract,
         "research_only": st.session_state.research_only,
@@ -107,6 +110,7 @@ def _settings_payload() -> dict:
             "journals": st.session_state.digest_journals,
             "keywords": st.session_state.digest_keywords.strip(),
             "keyword_match": st.session_state.digest_keyword_match,
+            "keyword_scope": st.session_state.digest_keyword_scope,
             "article_types": st.session_state.digest_article_types,
             "require_abstract": st.session_state.digest_require_abstract,
             "research_only": st.session_state.digest_research_only,
@@ -156,6 +160,7 @@ def _apply_initial_state(settings: dict) -> None:
     st.session_state.setdefault("custom_journal", "")
     st.session_state.setdefault("keywords", defaults["keywords"])
     st.session_state.setdefault("keyword_match", defaults.get("keyword_match", "all"))
+    st.session_state.setdefault("keyword_scope", defaults.get("keyword_scope", "abstract"))
     st.session_state.setdefault("article_types", defaults["article_types"])
     st.session_state.setdefault("require_abstract", bool(defaults.get("require_abstract", True)))
     st.session_state.setdefault("research_only", bool(defaults.get("research_only", True)))
@@ -170,6 +175,7 @@ def _apply_initial_state(settings: dict) -> None:
     st.session_state.setdefault("digest_custom_journal", "")
     st.session_state.setdefault("digest_keywords", digest["keywords"])
     st.session_state.setdefault("digest_keyword_match", digest.get("keyword_match", "all"))
+    st.session_state.setdefault("digest_keyword_scope", digest.get("keyword_scope", "abstract"))
     st.session_state.setdefault("digest_article_types", digest["article_types"])
     st.session_state.setdefault("digest_require_abstract", bool(digest.get("require_abstract", True)))
     st.session_state.setdefault("digest_research_only", bool(digest.get("research_only", True)))
@@ -222,11 +228,19 @@ def _parse_time(value: str) -> time:
         return time(hour=8, minute=0)
 
 
-def _filter_results(articles, keywords: str, keyword_match: str, require_abstract: bool, research_only: bool):
+def _filter_results(
+    articles,
+    keywords: str,
+    keyword_match: str,
+    require_abstract: bool,
+    research_only: bool,
+    keyword_scope: str = "abstract",
+):
     return filter_articles_by_abstract(
         filter_article_quality(articles, require_abstract, research_only),
         keywords,
         keyword_match,
+        keyword_scope,
     )
 
 
@@ -346,6 +360,17 @@ def _open_pending_url_for(article) -> None:
         height=0,
     )
     st.session_state.pending_open_url = ""
+
+
+def _result_table_with_hits(articles, keywords: str, scope: str) -> pd.DataFrame:
+    table = _result_table(articles)
+    if keywords.strip():
+        table.insert(
+            1,
+            "Keyword hits",
+            [keyword_hit_count(article, keywords, scope) for article in articles],
+        )
+    return table
 
 
 def _download_and_archive(article) -> None:
@@ -720,11 +745,11 @@ def main() -> None:
         )
 
         st.text_area(
-            "Abstract keywords",
+            "Keyword query",
             key="keywords",
-            placeholder="carbon cycle\ndrought\nsoil respiration",
-            height=90,
-            help="Matched locally against article abstracts after journal/date/type filtering.",
+            placeholder="carbon cycle OR carbon sink\ndrought\nNOT crop",
+            height=110,
+            help="One line is one concept. Use OR for synonyms and NOT or - to exclude terms. Matching uses word/phrase boundaries, not loose substring matching.",
         )
         common_keywords = frequent_keywords()
         if common_keywords:
@@ -739,7 +764,20 @@ def main() -> None:
             ["all", "any"],
             key="keyword_match",
             horizontal=True,
-            format_func=lambda value: "Match all" if value == "all" else "Match any",
+            format_func=lambda value: "All concepts" if value == "all" else "Any concept",
+            help="All concepts is stricter. Any concept is broader and may include more weakly related papers.",
+        )
+        st.radio(
+            "Search field",
+            ["abstract", "title_abstract", "title"],
+            key="keyword_scope",
+            horizontal=True,
+            format_func=lambda value: {
+                "abstract": "Abstract",
+                "title_abstract": "Title + abstract",
+                "title": "Title only",
+            }[value],
+            help="Title only is most precise but may miss relevant papers. Abstract is usually the best balance.",
         )
         st.number_input("Publication window, days", min_value=1, max_value=3650, step=1, key="days_back")
         st.multiselect("Article types", ARTICLE_TYPES, key="article_types")
@@ -818,6 +856,7 @@ def main() -> None:
                 st.session_state.digest_journals = st.session_state.selected_journals
                 st.session_state.digest_keywords = st.session_state.keywords
                 st.session_state.digest_keyword_match = st.session_state.keyword_match
+                st.session_state.digest_keyword_scope = st.session_state.keyword_scope
                 st.session_state.digest_article_types = st.session_state.article_types
                 st.session_state.digest_require_abstract = st.session_state.require_abstract
                 st.session_state.digest_research_only = st.session_state.research_only
@@ -844,17 +883,28 @@ def main() -> None:
                 st.rerun()
 
             st.text_area(
-                "Digest abstract keywords",
+                "Digest keyword query",
                 key="digest_keywords",
-                placeholder="carbon cycle\ndrought\nsoil respiration",
-                height=90,
+                placeholder="carbon cycle OR carbon sink\ndrought\nNOT crop",
+                height=110,
             )
             st.radio(
                 "Digest keyword match",
                 ["all", "any"],
                 key="digest_keyword_match",
                 horizontal=True,
-                format_func=lambda value: "Match all" if value == "all" else "Match any",
+                format_func=lambda value: "All concepts" if value == "all" else "Any concept",
+            )
+            st.radio(
+                "Digest search field",
+                ["abstract", "title_abstract", "title"],
+                key="digest_keyword_scope",
+                horizontal=True,
+                format_func=lambda value: {
+                    "abstract": "Abstract",
+                    "title_abstract": "Title + abstract",
+                    "title": "Title only",
+                }[value],
             )
             st.multiselect("Digest article types", ARTICLE_TYPES, key="digest_article_types")
             st.toggle("Digest require abstract", key="digest_require_abstract")
@@ -891,9 +941,10 @@ def main() -> None:
                 st.session_state.digest_keyword_match,
                 st.session_state.digest_require_abstract,
                 st.session_state.digest_research_only,
+                st.session_state.digest_keyword_scope,
             )[: st.session_state.digest_max_results]
             email_settings = _email_settings_from_payload(_settings_payload())
-            send_digest_email(email_settings, query, articles)
+            send_digest_email(email_settings, replace(query, keywords=st.session_state.digest_keywords), articles)
             record_usage(test_pushes=1)
             st.success("Digest sent.")
 
@@ -921,6 +972,7 @@ def main() -> None:
                 st.session_state.keyword_match,
                 st.session_state.require_abstract,
                 st.session_state.research_only,
+                st.session_state.keyword_scope,
             )[: st.session_state.max_results]
             record_usage(searches=1, articles_seen=len(st.session_state.articles))
             record_keywords(parse_keyword_terms(st.session_state.keywords))
@@ -930,13 +982,14 @@ def main() -> None:
         st.warning("No matching articles found. Try a wider date window or fewer filters.")
         return
 
-    st.dataframe(_result_table(articles), use_container_width=True, hide_index=True)
+    result_table = _result_table_with_hits(articles, st.session_state.keywords, st.session_state.keyword_scope)
+    st.dataframe(result_table, use_container_width=True, hide_index=True)
     csv_cols = st.columns([5, 1])
     with csv_cols[1]:
         st.markdown("<div class='compact-download'>", unsafe_allow_html=True)
         st.download_button(
             "Download CSV",
-            _result_table(articles).to_csv(index=False).encode("utf-8-sig"),
+            result_table.to_csv(index=False).encode("utf-8-sig"),
             file_name=f"nature-track-{query.to_date.isoformat()}.csv",
             mime="text/csv",
             use_container_width=True,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -26,7 +27,7 @@ def main() -> None:
         journals=digest["journals"],
         from_date=start,
         to_date=end,
-        keywords=digest["keywords"],
+        keywords="",
         article_types=digest["article_types"],
         max_results=200,
         max_pages=max((digest["max_results"] // 20) + 2, 3),
@@ -39,6 +40,7 @@ def main() -> None:
         ),
         digest["keywords"],
         digest.get("keyword_match", "all"),
+        digest.get("keyword_scope", "abstract"),
     )[: digest["max_results"]]
     email = settings["email"]
     send_digest_email(
@@ -51,7 +53,7 @@ def main() -> None:
             recipient=email["recipient"],
             use_tls=email["use_tls"],
         ),
-        query,
+        replace(query, keywords=digest["keywords"]),
         articles,
     )
     record_usage(scheduled_pushes=1)

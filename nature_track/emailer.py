@@ -66,7 +66,7 @@ def _render_text_digest(query: ArticleQuery, articles: list[Article]) -> str:
         "Nature-track digest",
         f"Date window: {query.from_date.isoformat()} to {query.to_date.isoformat()}",
         f"Journals: {', '.join(query.journals)}",
-        f"Keywords: {query.keywords or 'none'}",
+        f"Keywords: {query.keywords or 'applied after journal/date/type filtering'}",
         "",
     ]
 
