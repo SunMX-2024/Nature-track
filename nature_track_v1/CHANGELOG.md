@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.1.0 - AI notes, resilient search, and web preview
+## v1.1.0 - AI notes and resilient local search
 
 This release keeps the local Streamlit tool as the primary workflow while adding a more robust paper discovery and note-taking layer.
 
@@ -14,9 +14,7 @@ This release keeps the local Streamlit tool as the primary workflow while adding
 - Added keyword usage memory with a denser shortcut list.
 - Added selectable time-window units: days, weeks, months, and years.
 - Added scripts for starting and monitoring the local Streamlit app.
-- Added a FastAPI backend and React web preview for future browser-based deployment.
-- Added a WeChat miniprogram scaffold for future lightweight access.
-- Added unit tests for keyword filtering, multi-provider search, Crossref parsing, API behavior, AI summaries, and Obsidian export.
+- Added unit tests for keyword filtering, multi-provider search, Crossref parsing, AI summaries, and Obsidian export.
 
 ### Changed
 
@@ -25,7 +23,7 @@ This release keeps the local Streamlit tool as the primary workflow while adding
 - Saved the last keyword query as the default instead of resetting to a hard-coded term.
 - Reworked the article details section so detailed cards remain visible below the summary table.
 - Expanded settings persistence for journals, keyword scope, time windows, AI settings, and Obsidian settings.
-- Updated README with local Streamlit and web preview startup instructions.
+- Updated README with local Streamlit startup instructions.
 
 ### Fixed
 

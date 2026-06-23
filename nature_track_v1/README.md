@@ -16,6 +16,8 @@ The project is designed for a simple daily or weekly workflow: scan new publicat
 `first author_corresponding author_journal_title`
 
 - Expands each record with DOI, abstract, author list, open-access status, DOI link, and PDF link when available.
+- Summarizes selected papers with DeepSeek using a Heilmeier-style seven-question structure.
+- Exports paper notes to Obsidian with linked topic, method, data, and journal notes.
 - Saves tracker preferences locally for repeat use.
 - Sends manual or scheduled email digests from your own mailbox credentials.
 
@@ -27,26 +29,6 @@ python -m venv .venv
 pip install -r requirements.txt
 streamlit run app.py
 ```
-
-## Web App Preview
-
-Nature-track also has a FastAPI + React web app slice for a fuller browser-based version.
-
-Run the API:
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Run the frontend in a second terminal:
-
-```powershell
-cd web
-npm install
-npm run dev
-```
-
-Open `http://127.0.0.1:5173`. The frontend proxies `/api/*` to the FastAPI backend.
 
 ## Email Digest
 
