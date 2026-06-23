@@ -4,7 +4,11 @@ param(
 )
 
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$RepoRoot = Split-Path -Parent $ProjectRoot
 $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path $Python)) {
+    $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+}
 $App = Join-Path $ProjectRoot "app.py"
 $OutLog = Join-Path $ProjectRoot "streamlit.service.out.log"
 $ErrLog = Join-Path $ProjectRoot "streamlit.service.err.log"
