@@ -1,17 +1,48 @@
 .venv/
+.streamlit/
 __pycache__/
 *.py[cod]
 *.log
-.streamlit/
-data/settings.json
-data/usage.json
-data/source_ids.json
-data/openalex_cache/
-data/openalex_rate_limit.json
-data/crossref_issns.json
-data/crossref_cache/
+streamlit*.out.log
+streamlit*.err.log
+api*.out.log
+api*.err.log
+
+# Root-level runtime leftovers from local development. Source code now lives
+# under nature_track_v0/ and nature_track_v1/.
+/api/
+/data/
+/docs/
+/miniprogram/
+/nature_track/
+/scripts/
+/tests/
+/web/
+
+# Local runtime state and private settings
+nature_track_v0/data/settings.json
+nature_track_v0/data/usage.json
+nature_track_v0/data/source_ids.json
+nature_track_v0/data/openalex_cache/
+nature_track_v0/data/openalex_rate_limit.json
+nature_track_v0/data/crossref_issns.json
+nature_track_v0/data/crossref_cache/
+nature_track_v1/data/settings.json
+nature_track_v1/data/usage.json
+nature_track_v1/data/source_ids.json
+nature_track_v1/data/openalex_cache/
+nature_track_v1/data/openalex_rate_limit.json
+nature_track_v1/data/crossref_issns.json
+nature_track_v1/data/crossref_cache/
+
+# Local outputs and generated frontend dependencies
 downloads/
+nature_track_v0/downloads/
+nature_track_v1/downloads/
+nature_track_v1/web/node_modules/
+nature_track_v1/web/dist/
+nature_track_v1/web/tsconfig.tsbuildinfo
+
+# WeChat developer private config
 miniprogram/project.private.config.json
-web/node_modules/
-web/dist/
-web/tsconfig.tsbuildinfo
+nature_track_v1/miniprogram/project.private.config.json
