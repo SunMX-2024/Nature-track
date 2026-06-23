@@ -1733,7 +1733,7 @@ def main() -> None:
                 "DeepSeek model",
                 key="deepseek_model",
                 placeholder="deepseek-v4-pro",
-                help="Use deepseek-v4-pro for quality or deepseek-v4-flash for lower cost.",
+                help="Default expert mode uses deepseek-v4-pro with thinking enabled and max reasoning effort.",
             )
             st.text_input(
                 "Obsidian vault path",

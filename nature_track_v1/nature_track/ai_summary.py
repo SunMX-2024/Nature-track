@@ -13,6 +13,7 @@ from nature_track.openalex import Article
 
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
 DEFAULT_MODEL = "deepseek-v4-pro"
+DEFAULT_REASONING_EFFORT = "max"
 REQUEST_TIMEOUT = 90
 HEILMEIER_SECTIONS = [
     ("q1_trying_to_do", "What are you trying to do?"),
@@ -138,7 +139,8 @@ Article packet:
         "max_tokens": 3500,
         "stream": False,
         "response_format": {"type": "json_object"},
-        "thinking": {"type": "disabled"},
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": DEFAULT_REASONING_EFFORT,
     }
 
 

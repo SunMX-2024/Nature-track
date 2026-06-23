@@ -65,6 +65,8 @@ class AiObsidianTests(unittest.TestCase):
         payload = _request_payload(article(), full_text, DeepSeekSettings(api_key="secret"))
 
         self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertEqual(payload["thinking"], {"type": "enabled"})
+        self.assertEqual(payload["reasoning_effort"], "max")
         user_text = payload["messages"][1]["content"]
         self.assertIn("Heilmeier", user_text)
         self.assertIn("q1_trying_to_do", user_text)
