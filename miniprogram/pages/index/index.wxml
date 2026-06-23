@@ -1,0 +1,120 @@
+<view class="page">
+  <view class="topbar">
+    <button class="menu-button" bindtap="toggleFilters" aria-label="Filters">
+      <text></text>
+      <text></text>
+      <text></text>
+    </button>
+    <view class="topbar-copy">
+      <text class="kicker">Literature radar</text>
+      <text class="title">Nature-track</text>
+    </view>
+    <text class="result-count">{{articles.length}} papers</text>
+  </view>
+
+  <view class="header">
+    <text class="subtitle">Browse recent Earth and environmental science papers.</text>
+    <button class="filter-summary" bindtap="toggleFilters">
+      Filters · {{selectedJournals.length}} journals · {{daysLabel}}
+    </button>
+  </view>
+
+  <view wx:if="{{filtersOpen}}" class="drawer-mask" catchtap="closeFilters"></view>
+  <view class="filter-drawer {{filtersOpen ? 'open' : ''}}">
+    <view class="drawer-head">
+      <text>Filters</text>
+      <button bindtap="closeFilters">Close</button>
+    </view>
+
+    <view class="panel">
+      <view class="section-title">Journals</view>
+      <view class="journal-grid">
+        <button
+          wx:for="{{journals}}"
+          wx:key="*this"
+          class="journal-chip {{selectedJournals.indexOf(item) >= 0 ? 'active' : ''}}"
+          data-journal="{{item}}"
+          bindtap="toggleJournal"
+        >
+          {{item}}
+        </button>
+      </view>
+
+      <view class="custom-journal-row">
+        <input
+          class="custom-journal-input"
+          placeholder="Add journal"
+          value="{{customJournalText}}"
+          bindinput="onCustomJournalInput"
+        />
+        <button class="custom-journal-button" bindtap="addCustomJournal">Add</button>
+      </view>
+
+      <view class="section-title">Keywords</view>
+      <textarea
+        class="keyword-box"
+        placeholder="{{keywordPlaceholder}}"
+        value="{{keywordText}}"
+        bindinput="onKeywordInput"
+      />
+
+      <view class="segmented">
+        <button class="{{keywordMatch === 'all' ? 'active' : ''}}" data-value="all" bindtap="setMatch">All concepts</button>
+        <button class="{{keywordMatch === 'any' ? 'active' : ''}}" data-value="any" bindtap="setMatch">Any concept</button>
+      </view>
+
+      <view class="segmented scope">
+        <button class="{{keywordScope === 'abstract' ? 'active' : ''}}" data-value="abstract" bindtap="setScope">Abstract</button>
+        <button class="{{keywordScope === 'title_abstract' ? 'active' : ''}}" data-value="title_abstract" bindtap="setScope">Title + abstract</button>
+        <button class="{{keywordScope === 'title' ? 'active' : ''}}" data-value="title" bindtap="setScope">Title only</button>
+      </view>
+
+      <view class="days-selector">
+        <view class="days-button" bindtap="toggleDaysMenu">
+          <view>
+            <text class="days-label">Publication window</text>
+            <text class="days-value">{{daysLabel}}</text>
+          </view>
+          <text class="chevron {{daysMenuOpen ? 'open' : ''}}">▾</text>
+        </view>
+        <view wx:if="{{daysMenuOpen}}" class="days-options">
+          <button
+            wx:for="{{dayOptions}}"
+            wx:key="value"
+            class="day-option {{daysBack === item.value ? 'active' : ''}}"
+            data-value="{{item.value}}"
+            data-label="{{item.label}}"
+            bindtap="selectDays"
+          >
+            {{item.label}}
+          </button>
+        </view>
+      </view>
+
+      <button class="search-button" loading="{{loading}}" bindtap="search">Refresh papers</button>
+    </view>
+  </view>
+
+  <view wx:if="{{error}}" class="error">{{error}}</view>
+  <view wx:if="{{!loading && !articles.length && !error}}" class="empty">No results yet.</view>
+
+  <view class="article-list">
+    <view wx:for="{{articles}}" wx:key="doi" class="article-card">
+      <view class="article-top">
+        <text class="article-title">{{item.title}}</text>
+        <text class="journal">{{item.journal}}</text>
+      </view>
+      <view class="meta">
+        <text>{{item.publication_date}}</text>
+        <text>{{item.article_type}}</text>
+        <text wx:if="{{item.keyword_hits}}">{{item.keyword_hits}} hits</text>
+      </view>
+      <view wx:if="{{expanded[index]}}" class="abstract">{{item.abstract || 'No abstract available.'}}</view>
+      <view class="actions">
+        <button data-index="{{index}}" bindtap="toggleAbstract">{{expanded[index] ? 'Hide abstract' : 'Abstract'}}</button>
+        <button data-url="{{item.doi_url}}" bindtap="copyDoi">Copy DOI</button>
+        <button data-url="{{item.doi_url}}" bindtap="openDoi">Source page</button>
+      </view>
+    </view>
+  </view>
+</view>

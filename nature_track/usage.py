@@ -15,6 +15,7 @@ DEFAULT_USAGE: dict[str, Any] = {
     "test_pushes": 0,
     "scheduled_pushes": 0,
     "keyword_counts": {},
+    "keyword_memory": {},
     "read_articles": [],
     "last_view_at": "",
     "last_search_at": "",
@@ -50,24 +51,76 @@ def record_usage(**increments: int) -> dict[str, Any]:
     return usage
 
 
-def record_keywords(terms: list[str]) -> dict[str, Any]:
-    usage = load_usage()
+def record_keywords(terms: list[str], path: Path = USAGE_PATH) -> dict[str, Any]:
+    usage = load_usage(path)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
     counts = dict(usage.get("keyword_counts", {}))
+    memory = _keyword_memory(usage)
     for term in terms:
-        normalized = term.strip()
+        normalized = term.strip().casefold()
         if normalized:
             counts[normalized] = int(counts.get(normalized, 0)) + 1
+            current = memory.get(normalized, {"count": 0, "last_used_at": ""})
+            memory[normalized] = {
+                "count": int(current.get("count", 0)) + 1,
+                "last_used_at": now,
+            }
     usage["keyword_counts"] = counts
-    save_usage(usage)
+    usage["keyword_memory"] = memory
+    save_usage(usage, path)
     return usage
 
 
-def frequent_keywords(limit: int = 12) -> list[str]:
-    counts = load_usage().get("keyword_counts", {})
+def frequent_keyword_entries(limit: int = 12, path: Path = USAGE_PATH) -> list[dict[str, Any]]:
+    memory = _keyword_memory(load_usage(path))
     return [
-        term
-        for term, _ in sorted(counts.items(), key=lambda item: (-int(item[1]), item[0].casefold()))[:limit]
+        {"term": term, **entry}
+        for term, entry in sorted(
+            memory.items(),
+            key=lambda item: (
+                -int(item[1].get("count", 0)),
+                -_keyword_timestamp(str(item[1].get("last_used_at", ""))),
+                item[0].casefold(),
+            ),
+        )[:limit]
     ]
+
+
+def frequent_keywords(limit: int = 12, path: Path = USAGE_PATH) -> list[str]:
+    return [
+        entry["term"]
+        for entry in frequent_keyword_entries(limit, path)
+    ]
+
+
+def _keyword_memory(usage: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    memory: dict[str, dict[str, Any]] = {}
+    for term, count in dict(usage.get("keyword_counts", {})).items():
+        normalized = str(term).strip().casefold()
+        if normalized:
+            memory[normalized] = {"count": int(count), "last_used_at": ""}
+
+    for term, entry in dict(usage.get("keyword_memory", {})).items():
+        normalized = str(term).strip().casefold()
+        if not normalized:
+            continue
+        if isinstance(entry, dict):
+            memory[normalized] = {
+                "count": int(entry.get("count", memory.get(normalized, {}).get("count", 0))),
+                "last_used_at": str(entry.get("last_used_at", "")),
+            }
+        else:
+            memory[normalized] = {"count": int(entry), "last_used_at": ""}
+    return memory
+
+
+def _keyword_timestamp(value: str) -> float:
+    if not value:
+        return 0
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M").timestamp()
+    except ValueError:
+        return 0
 
 
 def record_read_article(article: dict[str, Any], action: str) -> dict[str, Any]:

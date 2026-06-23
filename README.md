@@ -28,6 +28,26 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Web App Preview
+
+Nature-track also has a FastAPI + React web app slice for a fuller browser-based version.
+
+Run the API:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Run the frontend in a second terminal:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. The frontend proxies `/api/*` to the FastAPI backend.
+
 ## Email Digest
 
 1. Open the app and choose your sender email provider.

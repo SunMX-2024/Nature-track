@@ -127,6 +127,10 @@ def parse_keyword_terms(value: str) -> list[str]:
     ]
 
 
+def openalex_search_text(value: str) -> str:
+    return " ".join(_dedupe_terms(parse_keyword_terms(value)))
+
+
 def parse_keyword_query(value: str) -> KeywordQuery:
     include_groups: list[list[str]] = []
     exclude_terms: list[str] = []
@@ -193,6 +197,38 @@ def filter_articles_by_abstract(
     return [article for _, article in ranked]
 
 
+def filter_search_results(
+    articles: list[Article],
+    keywords: str,
+    keyword_match: str,
+    require_abstract: bool,
+    research_only: bool,
+    keyword_scope: str = "abstract",
+    warnings: list[str] | None = None,
+) -> tuple[list[Article], list[str]]:
+    primary = filter_articles_by_abstract(
+        filter_article_quality(articles, require_abstract, research_only),
+        keywords,
+        keyword_match,
+        keyword_scope,
+    )
+    if primary or not _should_relax_for_crossref(warnings or []):
+        return primary, []
+
+    fallback_scope = "title_abstract" if keyword_scope == "abstract" else keyword_scope
+    relaxed = filter_articles_by_abstract(
+        filter_article_quality(articles, require_abstract=False, research_only=False),
+        keywords,
+        keyword_match,
+        fallback_scope,
+    )
+    if not relaxed:
+        return primary, []
+    return relaxed, [
+        "Strict abstract filtering returned no results; using Crossref title/abstract fallback because abstracts are sparse."
+    ]
+
+
 def keyword_hit_count(article: Article, keywords: str, scope: str = "abstract") -> int:
     query = parse_keyword_query(keywords)
     search_text = _search_text(article, scope)
@@ -228,6 +264,10 @@ def _looks_research_like(article: Article) -> bool:
         return False
 
     return len(article.abstract.split()) >= 60 and _passes_earth_guardrail(article)
+
+
+def _should_relax_for_crossref(warnings: list[str]) -> bool:
+    return any("Crossref supplied" in warning for warning in warnings)
 
 
 def _passes_earth_guardrail(article: Article) -> bool:
@@ -294,6 +334,26 @@ def _term_matches(term: str, text: str) -> bool:
 
 def _term_pattern(term: str) -> re.Pattern[str]:
     parts = re.split(r"\s+", term.casefold())
-    escaped_parts = [re.escape(part).replace(r"\*", r"[\w-]*") for part in parts if part]
-    body = r"\s+".join(escaped_parts)
+    escaped_parts = [_term_part_pattern(part) for part in parts if part]
+    body = r"[\s-]+".join(escaped_parts)
     return re.compile(rf"(?<![\w-]){body}(?![\w-])", flags=re.IGNORECASE)
+
+
+def _term_part_pattern(part: str) -> str:
+    if "*" in part:
+        return re.escape(part).replace(r"\*", r"[\w-]*")
+    escaped = re.escape(part)
+    if len(part) >= 3 and part.isalpha() and not part.endswith("s"):
+        return rf"{escaped}(?:s|es)?"
+    return escaped
+
+
+def _dedupe_terms(terms: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for term in terms:
+        normalized = term.strip().casefold()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+    return result

@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/webview/webview"
+  ],
+  "window": {
+    "navigationBarTitleText": "Nature-track",
+    "navigationBarBackgroundColor": "#ebe9e1",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#ebe9e1"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

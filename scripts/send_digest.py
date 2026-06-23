@@ -10,8 +10,14 @@ sys.path.insert(0, str(ROOT))
 
 from nature_track.config import DEFAULT_SETTINGS, load_settings
 from nature_track.emailer import EmailSettings, send_digest_email
-from nature_track.filters import filter_article_quality, filter_articles_by_abstract, parse_keyword_terms
-from nature_track.openalex import ArticleQuery, fetch_articles
+from nature_track.filters import (
+    filter_article_quality,
+    filter_articles_by_abstract,
+    filter_search_results,
+    parse_keyword_terms,
+)
+from nature_track.openalex import ArticleQuery
+from nature_track.search import fetch_candidate_articles_with_diagnostics
 from nature_track.usage import record_keywords, record_usage
 
 
@@ -31,17 +37,23 @@ def main() -> None:
         article_types=digest["article_types"],
         max_results=200,
         max_pages=max((digest["max_results"] // 20) + 2, 3),
+        mailto=settings.get("openalex_mailto") or settings["email"].get("sender", ""),
     )
-    articles = filter_articles_by_abstract(
-        filter_article_quality(
-            fetch_articles(query),
-            digest.get("require_abstract", True),
-            digest.get("research_only", True),
-        ),
+    search_result = fetch_candidate_articles_with_diagnostics(
+        query,
         digest["keywords"],
         digest.get("keyword_match", "all"),
+    )
+    articles, _warnings = filter_search_results(
+        search_result.articles,
+        digest["keywords"],
+        digest.get("keyword_match", "all"),
+        digest.get("require_abstract", True),
+        digest.get("research_only", True),
         digest.get("keyword_scope", "abstract"),
-    )[: digest["max_results"]]
+        search_result.warnings,
+    )
+    articles = articles[: digest["max_results"]]
     email = settings["email"]
     send_digest_email(
         EmailSettings(

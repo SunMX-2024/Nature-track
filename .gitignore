@@ -1,7 +1,17 @@
 .venv/
 __pycache__/
 *.py[cod]
+*.log
 .streamlit/
 data/settings.json
 data/usage.json
+data/source_ids.json
+data/openalex_cache/
+data/openalex_rate_limit.json
+data/crossref_issns.json
+data/crossref_cache/
 downloads/
+miniprogram/project.private.config.json
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
